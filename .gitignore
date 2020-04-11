@@ -1,3 +1,5 @@
 desktop.ini
 tasks.txt
 README.pdf
+__pycache__
+__pycache__/*

@@ -4,36 +4,13 @@ import cv2
 import numpy as np
 import time
 import math
-
-_DEBUG_ = True
-_DISPLAY_ERROR_TIME_ = 5
-_HEIGHT_IMG_ = 800
+import constants
+from swap import Swap
 
 ### FUNCTIONS ###
 
-def getFace(img):
-    # Detect faces
-    faces_rect = face_detector(img, 0)
-    if len(faces_rect) > 0:
-        return faces_rect[0]
-    else:
-        return None
-
-def getLandmarks(img, face_rect):
-    # Get landmarks and convert it to array
-    landmarks = shape_predictor(img, face_rect)
-    landmarks_points = []
-    for n in range(0, 68):
-        x = landmarks.part(n).x
-        y = landmarks.part(n).y
-        landmarks_points.append((x, y))
-
-        # Display landmarks
-        if _DEBUG_:
-            cv2.circle(img, (x, y), 2, (0, 0, 255), 2)
-
-    return landmarks_points
-
+# Returns two images from one separated in the middle of two rectangles
+# Is used to separate 2 faces in two images to treat them separatly
 def splitBetweenFaces(img, rect_face_A, rect_face_B):
     if rect_face_A.right() < rect_face_B.left():
         middle = int((rect_face_B.left() + rect_face_A.right()) / 2)
@@ -51,6 +28,8 @@ def splitBetweenFaces(img, rect_face_A, rect_face_B):
     rect_face_B = dlib.rectangle(rect_face_B.left() - middle + 1, rect_face_B.top(), rect_face_B.right() - middle + 1, rect_face_B.bottom())
     return img_A, rect_face_A, img_B, rect_face_B
 
+# This function takes a picture from the camera with user help
+# To take the picture you need two faces in front of the camera, separated by the line
 def getInitFaces():
     errorNotEnoughFaces = False
     errorFacesPlacement = False
@@ -74,17 +53,19 @@ def getInitFaces():
 
             if len(faces) > 1:
                 dst_rect_face = faces[1]
+                for i in range(0, 10):
+                    cv2.rectangle(cam_img, (int(cam_img.shape[1]/2 - 2), int(cam_img.shape[0] * i/10)), (int(cam_img.shape[1]/2 + 2), int(cam_img.shape[0] * i/10) + 30), (0, 0, 255), cv2.FILLED)
             else:
                 dst_rect_face = None
 
             if errorNotEnoughFaces:
                 cv2.putText(cam_img, "No faces found on this frame. Please retry.", (5, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255))
-                if time.perf_counter() - errorTimer >= _DISPLAY_ERROR_TIME_:
+                if time.perf_counter() - errorTimer >= constants._DISPLAY_ERROR_TIME_:
                     errorNotEnoughFaces = False
 
             if errorFacesPlacement:
                 cv2.putText(cam_img, "Please leave a gap between your faces and retry.", (5, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255))
-                if time.perf_counter() - errorTimer >= _DISPLAY_ERROR_TIME_:
+                if time.perf_counter() - errorTimer >= constants._DISPLAY_ERROR_TIME_:
                     errorFacesPlacement = False
 
         if displayInitImages:
@@ -120,7 +101,7 @@ def getInitFaces():
                     errorNotEnoughFaces = False
                     displayInitImages = True
         elif displayInitImages and key == 121: # 121 == 'y'
-            if _DEBUG_:
+            if constants._DEBUG_:
                 cv2.destroyWindow("Initialization")
             cv2.destroyWindow("Source")
             cv2.destroyWindow("Destination")
@@ -131,55 +112,6 @@ def getInitFaces():
             displayInitImages = False
         elif key == 27: # 27 == Escape
             exit()
-
-def getConvexRect(points):
-    # Find convex hull and the bounding rect of it - This permit some optimization for the subdivision
-    convexhull = cv2.convexHull(points)
-    convex_rect = cv2.boundingRect(convexhull)
-    return convex_rect
-
-def getPointsFromRect(points, rect):
-    new_points = []
-    for i in range(0, len(points)):
-        new_points.append((points[i][0] - rect[0], points[i][1] - rect[1]))
-    return new_points
-
-def getTriangles(landmarks, img):
-    # Convert points into numpy array
-    points = np.array(landmarks, np.int32)
-
-    # Get convex rect
-    convex_rect = getConvexRect(points)
-
-    # Delaunay subdivision
-    subdiv = cv2.Subdiv2D(convex_rect)
-    subdiv.insert(landmarks)
-    triangles = np.array(subdiv.getTriangleList(), dtype=np.int32)
-
-    # Get indexes of all the points in each triangle
-    indexes_triangles = []
-    for t in triangles:
-        # Get the 3 points of the triangle
-        pt1 = (t[0], t[1])
-        pt2 = (t[2], t[3])
-        pt3 = (t[4], t[5])
-
-        # Find the corresponding points and get their indexes
-        index_pt1 = np.where((points == pt1).all(axis=1))[0][0]
-        index_pt2 = np.where((points == pt2).all(axis=1))[0][0]
-        index_pt3 = np.where((points == pt3).all(axis=1))[0][0]
-
-        if index_pt1 is not None and index_pt2 is not None and index_pt3 is not None:
-            # Add it in the array as a triangle
-            triangle = [index_pt1, index_pt2, index_pt3]
-            indexes_triangles.append(triangle)
-
-            if _DEBUG_:
-                # Display triangle
-                cv2.line(img, pt1, pt2, (255, 255, 255), 1)
-                cv2.line(img, pt2, pt3, (255, 255, 255), 1)
-                cv2.line(img, pt3, pt1, (255, 255, 255), 1)
-    return indexes_triangles, convex_rect
 
 ### INITIALIZATION ###
 
@@ -198,234 +130,50 @@ cam = cv2.VideoCapture(0)
 # Get init src img
 src_img_init, src_rect_face_init, dst_img_init, dst_rect_face_init = getInitFaces()
 
-src_img_gray_init = cv2.cvtColor(src_img_init, cv2.COLOR_BGR2GRAY)
-dst_img_gray_init = cv2.cvtColor(dst_img_init, cv2.COLOR_BGR2GRAY)
-
-## Source
-# Get init src landmarks
-src_landmarks_init = getLandmarks(src_img_gray_init, src_rect_face_init)
-# Get landmarks coordinates from face coords
-src_convex_rect_init = getConvexRect(np.array(src_landmarks_init, np.int32))
-src_points_init = getPointsFromRect(src_landmarks_init, src_convex_rect_init)
-
-
-## Destination
-#Get init dst landmarks
-dst_landmarks_init = getLandmarks(dst_img_gray_init, dst_rect_face_init)
-# Get triangles from init src
-dst_triangles_init, dst_convex_rect_init = getTriangles(dst_landmarks_init, dst_img_gray_init)
-dst_points_init = getPointsFromRect(dst_landmarks_init, dst_convex_rect_init)
+# Create Swap object
+right_swap = Swap(src_img_init, src_rect_face_init, dst_img_init, dst_rect_face_init, shape_predictor)
 
 ### EXPRESSION SWAP ###
 while True:
-    if _DEBUG_:
+    if constants._DEBUG_:
         initial_time = time.perf_counter()
 
-    # Get src img
+    # Get camera image (1 frame)
     _, cam_img = cam.read()
     cam_img_gray = cv2.cvtColor(cam_img, cv2.COLOR_BGR2GRAY)
+    img_final = cam_img.copy()
+    if constants._DEBUG_:
+        debug_img = cam_img_gray.copy()
 
-    # Get Face
+    # Get Faces
     faces = face_detector(cam_img_gray)
     if len(faces) > 1:
         # Get Faces
-        dst_rect_face = faces[1]
-        src_rect_face = faces[0]
+        left_rect_face = faces[0]
+        right_rect_face = faces[1]
         
-        # Split the image into two
-        src_img, src_rect_face, dst_img, dst_rect_face = splitBetweenFaces(cam_img, src_rect_face, dst_rect_face)
-        if len(src_img) != 0:
-            ## DESTINATION
-            dst_img_gray = cv2.cvtColor(dst_img, cv2.COLOR_BGR2GRAY)
-            # Get dst landmarks
-            dst_landmarks = getLandmarks(dst_img_gray, dst_rect_face)
+        # Split the image in two
+        left_img, left_rect_face, right_img, right_rect_face = splitBetweenFaces(cam_img, left_rect_face, right_rect_face)
+        if len(left_img) != 0:
+            right_img = right_swap.getFrame(left_img, left_rect_face, right_img, right_rect_face)
 
-            # Remove the landmarks from the image
-            dst_img_gray = cv2.cvtColor(dst_img, cv2.COLOR_BGR2GRAY)
+            # Put the dst part in the whole img
+            img_final[0:cam_img.shape[0], 0:left_img.shape[1]] = left_img
+            img_final[0:cam_img.shape[0], left_img.shape[1]:cam_img.shape[1]] = right_img
 
-            if _DEBUG_:
-                # Get ConvexRect from dst
-                dst_convex_rect = getConvexRect(np.array(dst_landmarks, np.int32))
-                # Display rect around face
-                cv2.rectangle(dst_img_gray, (dst_convex_rect[0], dst_convex_rect[1]),
-                        (dst_convex_rect[0] + dst_convex_rect[2], dst_convex_rect[1] + dst_convex_rect[3]), (255, 255, 255), 2)
+            if constants._DEBUG_:
+                left_debug_img, right_debug_img = right_swap.getDebugFrame()
+                debug_img[0:debug_img.shape[0], 0:left_debug_img.shape[1]] = left_debug_img
+                debug_img[0:debug_img.shape[0], left_debug_img.shape[1]:debug_img.shape[1]] = right_debug_img
 
-            ## SOURCE
-            src_img_gray = cv2.cvtColor(src_img, cv2.COLOR_BGR2GRAY)
+    ## Display images
+    cv2.imshow("Final", img_final)
 
-            # Get src landmarks
-            src_landmarks = getLandmarks(src_img_gray, src_rect_face)
-
-            ## Face rotation issues
-            # Get coordinates from temple
-            src_points_temple = []
-            for i in range(0, len(src_landmarks)):
-                src_points_temple.append((src_landmarks[i][0] - src_landmarks[0][0], src_landmarks[i][1] - src_landmarks[0][1]))
-
-            # Z-axis
-            dst_landmark_temple = (dst_landmarks[16][0] - dst_landmarks[0][0], dst_landmarks[16][1] - dst_landmarks[0][1])
-            dst_z_rotation_angle = -math.atan2(dst_landmark_temple[1], dst_landmark_temple[0])
-            src_z_rotation_angle = -math.atan2(src_points_temple[16][1], src_points_temple[16][0])
-            z_rotation_angle = src_z_rotation_angle - dst_z_rotation_angle
-            z_trigo = (math.cos(z_rotation_angle), math.sin(z_rotation_angle))
-            for i in range(1, len(src_points_temple)):
-                src_points_temple[i] = (int(src_points_temple[i][0] * z_trigo[0] - src_points_temple[i][1] * z_trigo[1]),
-                                        int(src_points_temple[i][0] * z_trigo[1] + src_points_temple[i][1] * z_trigo[0]))
-
-            # Get coordinates back in landmarks
-            for i in range(0, len(src_landmarks)):
-                src_landmarks[i] = (src_points_temple[i][0] + src_landmarks[0][0], src_points_temple[i][1] + src_landmarks[0][1])
-
-            # Get convex rect after fixing rotation issues
-            src_convex_rect = getConvexRect(np.array(src_landmarks, np.int32))
-
-            # Eyebrows issue
-            src_eyebrows_movement = src_landmarks[0][1] - src_convex_rect[1] - src_points_init[0][1]
-            src_convex_rect = (src_convex_rect[0], src_convex_rect[1] + src_eyebrows_movement,
-                                src_convex_rect[2], src_convex_rect[3] - src_eyebrows_movement)
-
-            if _DEBUG_:
-                # Display rect around face
-                cv2.rectangle(src_img_gray, (src_convex_rect[0], src_convex_rect[1]),
-                        (src_convex_rect[0] + src_convex_rect[2], src_convex_rect[1] + src_convex_rect[3]), (255, 255, 255), 2)
-
-            # Get points from rect
-            src_points = getPointsFromRect(src_landmarks, src_convex_rect)
-
-            # Calculate ratio
-            src_rect_ratio = src_convex_rect_init[2] / src_convex_rect[2]
-
-            ## New landmarks calcul
-            dst_landmarks_new = []
-            dst_points_new = []
-            distance_first_landmark = (0, 0)
-            arePointsInImage = True
-
-            # Calculate ratio
-            dst_rect_ratio = dst_convex_rect[2] / dst_convex_rect_init[2]
-            for i in range(0, len(src_points)):
-                ## Face calibration
-                if i < 17:
-                    dst_landmark_new = dst_landmarks[i]
-                    if i == 0:
-                        distance_first_landmark = (dst_landmarks[i][0] - dst_landmarks_init[i][0], dst_landmarks[i][1] - dst_landmarks_init[i][1])
-                else:
-                    # Apply ratio on src landmarks
-                    src_point_normalized = (int(src_points[i][0] * src_rect_ratio), int(src_points[i][1] * src_rect_ratio))
-
-                    ## Create new points
-                    # Make subtraction of init and current src points
-                    substract_result = (src_points_init[i][0] - src_point_normalized[0], src_points_init[i][1] - src_point_normalized[1])
-                    # Apply the substraction on dst
-                    dst_point_new = (dst_points_init[i][0] - substract_result[0], dst_points_init[i][1] - substract_result[1])
-                    # Apply ratio on dst points
-                    dst_point_new = (int(dst_point_new[0] * dst_rect_ratio), int(dst_point_new[1] * dst_rect_ratio))
-                    # Get point from the whole image
-                    dst_landmark_new = (dst_point_new[0] + dst_convex_rect_init[0], dst_point_new[1] + dst_convex_rect_init[1])
-                    # Move landmark to dst face
-                    dst_landmark_new = (dst_landmark_new[0] + distance_first_landmark[0], dst_landmark_new[1] + distance_first_landmark[1])
-
-                # Check if landmark in dst img to provide crashes
-                if dst_landmark_new[0] < 0 or dst_landmark_new[1] < 0 or dst_landmark_new[0] >= dst_img.shape[1] or dst_landmark_new[1] >= dst_img.shape[0]:
-                    arePointsInImage = False
-                    break
-
-                # Add point into list
-                dst_landmarks_new.append(dst_landmark_new)
-
-            if _DEBUG_:
-                # Display new landmarks
-                cv2.circle(dst_img_gray, dst_landmark_new, 2, (0, 0, 0), 2)
-
-            ## Make Triangles
-            debug_img = cam_img_gray.copy()
-            img_final = cam_img.copy()
-            
-            if arePointsInImage:
-                # Creating new image
-                img_new = np.zeros(dst_img.shape, np.uint8)
-
-                for dst_triangle_init in dst_triangles_init:
-                    # Get old triangle
-                    pt1 = dst_landmarks_init[dst_triangle_init[0]]
-                    pt2 = dst_landmarks_init[dst_triangle_init[1]]
-                    pt3 = dst_landmarks_init[dst_triangle_init[2]]
-                    old_triangle = np.array([pt1, pt2, pt3], np.int32)
-
-                    # Get rect of triangle
-                    (x, y, w, h) = cv2.boundingRect(old_triangle)
-
-                    # Crop the image into the rect of the triangle
-                    dst_img_triangle_rect = dst_img_init[y: y + h, x: x + w]
-
-                    # Substract rect position to triangle's
-                    old_triangle = np.array([[pt1[0] - x, pt1[1] - y],
-                                            [pt2[0] - x, pt2[1] - y],
-                                            [pt3[0] - x, pt3[1] - y]], np.int32)
-
-                    # Get new triangle
-                    pt1 = dst_landmarks_new[dst_triangle_init[0]]
-                    pt2 = dst_landmarks_new[dst_triangle_init[1]]
-                    pt3 = dst_landmarks_new[dst_triangle_init[2]]
-                    new_triangle = np.array([pt1, pt2, pt3], np.int32)
-
-                    # Get rect of triangle
-                    (x, y, w, h) = cv2.boundingRect(new_triangle)
-
-                    # Substract rect position to triangle's
-                    new_triangle = np.array([[pt1[0] - x, pt1[1] - y],
-                                            [pt2[0] - x, pt2[1] - y],
-                                            [pt3[0] - x, pt3[1] - y]], np.int32)
-
-                    # Create a mask to cut the rect into a real triangle
-                    new_triangle_mask = np.zeros((h, w), np.uint8)
-                    cv2.fillConvexPoly(new_triangle_mask, new_triangle, 255)
-
-                    # Warping
-                    transformationMatrix = cv2.getAffineTransform(np.float32(old_triangle), np.float32(new_triangle))
-                    warped_triangle = cv2.warpAffine(dst_img_triangle_rect, transformationMatrix, (w, h))
-                    warped_triangle = cv2.bitwise_and(warped_triangle, warped_triangle, mask=new_triangle_mask)
-
-                    img_new_triangle_rect = img_new[y: y + h, x: x + w]
-                    
-                    img_new_triangle_rect_gray = cv2.cvtColor(img_new_triangle_rect, cv2.COLOR_BGR2GRAY)
-                    _, mask_triangle_border = cv2.threshold(img_new_triangle_rect_gray, 1, 255, cv2.THRESH_BINARY_INV)
-                    warped_triangle = cv2.bitwise_and(warped_triangle, warped_triangle, mask=mask_triangle_border)
-
-                    img_new_triangle_rect = cv2.add(img_new_triangle_rect, warped_triangle)
-                    img_new[y: y + h, x: x + w] = img_new_triangle_rect
-                
-                # Draw new face on old image
-                dst_img_new = np.zeros_like(dst_img_gray)
-                dst_convex_new = cv2.convexHull(np.array(dst_landmarks_new, np.int32))
-                dst_face_mask = cv2.bitwise_not(cv2.fillConvexPoly(dst_img_new, dst_convex_new, 255))
-
-                dst_head_noface = cv2.bitwise_and(dst_img, dst_img, mask=dst_face_mask)
-                dst_img_new = cv2.add(dst_head_noface, img_new)
-
-                # Put the dst part in the whole img
-                img_final = cam_img.copy()
-                img_final[0:cam_img.shape[0], src_img.shape[1]:cam_img.shape[1]] = dst_img_new
-
-                if _DEBUG_:
-                    debug_img[0:debug_img.shape[0], 0:src_img.shape[1]] = src_img_gray
-                    debug_img[0:debug_img.shape[0], src_img.shape[1]:debug_img.shape[1]] = dst_img_gray
-
-    # Display images
-    if _DEBUG_:
+    if constants._DEBUG_:
         # Display FPS
         fps = str(int(1 / (time.perf_counter() - initial_time))) + " FPS"
         cv2.putText(debug_img, fps, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255))
-        if len(faces) > 1:
-            cv2.imshow("Final", img_final)
-        else:
-            cv2.imshow("Final", cam_img)
         cv2.imshow("DEBUG", debug_img)
-    else:
-        if len(faces) > 1:
-            cv2.imshow("Final", img_final)
-        else:
-            cv2.imshow("Final", cam_img)
 
     # Get key
     key = cv2.waitKey(1)

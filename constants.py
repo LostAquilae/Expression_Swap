@@ -1,0 +1,3 @@
+_DEBUG_ = True
+_DISPLAY_ERROR_TIME_ = 5
+_HEIGHT_IMG_ = 800
