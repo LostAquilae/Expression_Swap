@@ -6,17 +6,17 @@ Then we decided to go further by swapping expressions between two faces.
 ## Different branches
 We made multiple branches to have a proper seperation of the different results.
 
-- master
-
-Swap facial expressions between two faces both taken by the camera.
-
 - cam-to-image
 
 Transfer facial expressions from a face filmed by the camera to the face on a selected image.
 
-- cam-1-face
+- simple-swap
 
 Transfer facial expressions from a face to another face both taken by the camera.
+
+- double-swap
+
+Swap facial expressions between two faces both taken by the camera.
 
 ## How to use Expression Swap
 You must have cmake, dlib and opencv installed on your machine.
