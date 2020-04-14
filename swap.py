@@ -7,7 +7,7 @@ import constants
 class Swap:
     """
     This class contains all the variables and the functions needed for a facial swap.
-    There are local variables :
+    There are attributes :
     - shape_predictor : function that detects landmarks on a face
     - dst_img_init : destination image where the subject hasn't any facial expressions (initial image)
     - src_convex_rect_init : rectangle made by landmarks around the face on the source initial image
@@ -33,13 +33,13 @@ class Swap:
 
 
         ## Destination
-        #Get init dst landmarks
+        # Get init dst landmarks
         self.dst_landmarks_init = self.getLandmarks(dst_img_gray_init, dst_rect_face_init)
         # Get triangles from init src
         self.dst_triangles_init, self.dst_convex_rect_init = self.getTriangles(self.dst_landmarks_init)
         self.dst_points_init = self.getPointsFromRect(self.dst_landmarks_init, self.dst_convex_rect_init)
 
-    #Get landmarks and convert it to array
+    # Get landmarks and convert it to array
     def getLandmarks(self, img, face_rect):
         landmarks = self.shape_predictor(img, face_rect)
         landmarks_points = []
@@ -101,7 +101,7 @@ class Swap:
                 
         return indexes_triangles, convex_rect
 
-    # Get a frame of a src_img and dst_img and rects around faces after facial swapping
+    # Returns destination image after facial swapping
     # This function is meant to be called every frame (so in a while loop for exemple)
     def getFrame(self, src_img, src_rect_face, dst_img, dst_rect_face):
         ## DESTINATION
@@ -252,17 +252,22 @@ class Swap:
                 new_triangle_mask = np.zeros((h, w), np.uint8)
                 cv2.fillConvexPoly(new_triangle_mask, new_triangle, 255)
 
-                # Warping
+                ## Warping
+                # Get transformation matrix
                 transformationMatrix = cv2.getAffineTransform(np.float32(old_triangle), np.float32(new_triangle))
+                # Apply triangle matrix on triangle
                 warped_triangle = cv2.warpAffine(dst_img_triangle_rect, transformationMatrix, (w, h))
+                # Apply mask to have only a triangle in the image
                 warped_triangle = cv2.bitwise_and(warped_triangle, warped_triangle, mask=new_triangle_mask)
 
                 img_new_triangle_rect = img_new[y: y + h, x: x + w]
                 
+                # Remove the lines made by the triangles
                 img_new_triangle_rect_gray = cv2.cvtColor(img_new_triangle_rect, cv2.COLOR_BGR2GRAY)
                 _, mask_triangle_border = cv2.threshold(img_new_triangle_rect_gray, 1, 255, cv2.THRESH_BINARY_INV)
                 warped_triangle = cv2.bitwise_and(warped_triangle, warped_triangle, mask=mask_triangle_border)
 
+                # Add triangles together in a new image
                 img_new_triangle_rect = cv2.add(img_new_triangle_rect, warped_triangle)
                 img_new[y: y + h, x: x + w] = img_new_triangle_rect
             
