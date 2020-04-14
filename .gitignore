@@ -1,5 +1,9 @@
 desktop.ini
 tasks.txt
 README.pdf
+*.docx
+Expression\ Swap.pdf
 __pycache__
 __pycache__/*
+.vscode
+.vscode/*
