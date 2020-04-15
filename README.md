@@ -18,7 +18,7 @@ Transfer facial expressions from a face to another face both taken by the camera
 
 Swap facial expressions between two faces both taken by the camera.
 
-## How to use Expression Swap
+## How to use Expression Swap (double-swap)
 You must have cmake, dlib and opencv installed on your machine.
 
 `pip install cmake`
@@ -29,11 +29,9 @@ This is the line to launch the expression swap program.
 
 `python expression_swap.py predictor.dat`
 
-To launch expression_swap.py in the cam-to-image branch, you have to add an image like this. 
+Once the program is launched, there's an initialization phase. You need to press **_Space_** to take a picture of two faces, one on the left-side and one on the right-side. You have to make a **poker-face** ! This initialization process permits to detect the expressions made when swapping. You can confirm your poker-face picture by pressing 'y'. If you want to take it again, you can press 'n'.
 
-`python expression_swap.py predictor.dat examples/ulysse.jpg`
-
-## Example image
+## Example image (double-swap)
 
 ![Example Image](./example_image.png)
 
